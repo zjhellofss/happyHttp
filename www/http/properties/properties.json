@@ -1,0 +1,8 @@
+{
+  "port": 9999,
+  "index": "hello.html",
+  "log_path": "/Users/fss/serverlog/",
+  "alternate_port": 9998,
+  "static_page": "./www/http/pages/static/%s"
+}
+
