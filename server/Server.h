@@ -7,7 +7,7 @@
 
 #include <string>
 #include <evutil.h>
-#include "initConfig.h"
+#include "InitConfig.h"
 
 
 class Server {
@@ -34,6 +34,7 @@ private:
             struct sockaddr *addr,
             int len, void *ptr);
 
+
     static void eventCb (struct bufferevent *bev, short events, void *arg);
 
     static void writeCb (struct bufferevent *bev, void *arg);
@@ -42,6 +43,11 @@ private:
 
     static void acceptErrorCb (struct evconnlistener *listener, void *ctx);
 
+    static void sendResponseHeader (struct bufferevent *bev, int code,
+                                    const std::string &respCode, const std::string &type,
+                                    long len);
+
+    static void sendFile (struct bufferevent *bev, const std::string &path);
 
 private:
     InitConfig *initConfig = nullptr;

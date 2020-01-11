@@ -1,23 +1,29 @@
 #include <cassert>
+#include <string>
 #include <fstream>
+#include <streambuf>
 #include <glog/logging.h>
-#include "server.h"
-#include "../include/rapidjson/document.h"
 #include <event2/event.h>
 #include <event2/listener.h>
 #include <event2/thread.h>
 #include <event.h>
+#include <boost/filesystem.hpp>
+#include <sys/stat.h>
+#include "Server.h"
+#include "HttpHeader.h"
+#include "../include/rapidjson/document.h"
 
 //
 // Created by fushenshen on 2020/1/11.
 //
+InitConfig *config;
+
 void Server::run () {
     if (!initConfig) {
         //获取服务器的配置文件
         this->init();
     }
     this->socketServerProcess();
-
 }
 
 Server::~Server () {
@@ -25,15 +31,14 @@ Server::~Server () {
         delete initConfig;
         initConfig = nullptr;
     }
+    LOG(WARNING) << "系统关闭\n";
     //关闭日志系统
-    LOG(ERROR) << "系统关闭\n";
     google::ShutdownGoogleLogging();
 }
 
 void Server::init () {
     serverInit();
     logInit();
-
 }
 
 Server::Server (const std::string &configPath) : configPath(configPath) {
@@ -55,55 +60,36 @@ void Server::serverInit () {
         Document d;
         d.Parse(jsonStr.data());
         //配置服务器绑定的端口
-        if (!d.HasMember("port")) {
-            throw std::runtime_error("Missing server port in configuration file");
-        } else {
-            initConfig->setPort(d["port"].GetInt());
-        }
+        initConfig->setPort(d["port"].GetInt());
         //配置服务器的主页
-        if (!d.HasMember("index")) {
-            throw std::runtime_error("Missing server index page in configuration file");
-        } else {
-            initConfig->setIndexFile(d["index"].GetString());
-        }
+        initConfig->setIndexFile(d["index"].GetString());
         //配置服务器的日志文件
-        if (!d.HasMember("log_path")) {
-            throw std::runtime_error("Missing server log file path in configuration file");
-        } else {
-            initConfig->setLogPath(d["log_path"].GetString());
-        }
+        initConfig->setLogPath(d["log_path"].GetString());
         //配置服务器的静态目录
-        if (!d.HasMember("static_page")) {
-            throw std::runtime_error("Missing server static page path in configuration file");
-        } else {
-            initConfig->setStaticPage(d["static_page"].GetString());
-        }
-
+        initConfig->setStaticPage(d["static_page"].GetString());
         //配置服务器的备用端口
-        if (!d.HasMember("alternate_port")) {
-            throw std::runtime_error("Missing server alternate_port in configuration file");
-        } else {
-            initConfig->setAlternatePort(d["alternate_port"].GetInt());
-        }
-
+        initConfig->setAlternatePort(d["alternate_port"].GetInt());
+        config = this->initConfig;
+        t.close();
     }
 }
 
 void Server::logInit () {
     google::InitGoogleLogging("happyHttp");//日志前缀
     std::string basePath = this->initConfig->getLogPath();
+
     FLAGS_log_dir = basePath;
+    FLAGS_logbufsecs = 5;//延迟写
+    FLAGS_max_log_size = 100;//日志文件最大为100MB
+    FLAGS_stop_logging_if_full_disk = true;//磁盘满时停止记录
+    FLAGS_colorlogtostderr = true;
+
     google::SetLogDestination(google::INFO, (basePath + "INFO_").data());
     google::SetLogDestination(google::WARNING, (basePath + "WARNING_").data());
     google::SetLogDestination(google::ERROR, (basePath + "ERROR_").data());
     google::SetLogDestination(google::FATAL, (basePath + "FATAL_").data());
 
-    FLAGS_logbufsecs = 5;//延迟写
-    FLAGS_max_log_size = 100;//日志文件最大为100MB
-    FLAGS_stop_logging_if_full_disk = true;//磁盘满时停止记录
     google::SetStderrLogging(google::INFO);
-    FLAGS_colorlogtostderr = true;
-
 }
 
 
@@ -123,6 +109,15 @@ void Server::socketServerProcess () {
         LOG(INFO) << "Listener started successfully\n";
     } else {
         //todo 开启备用的端口号
+        serv.sin_port = htons(this->initConfig->getAlternatePort());
+        listener = evconnlistener_new_bind(base, listenerInit, base,
+                                           LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE,
+                                           36, (struct sockaddr *) &serv, sizeof(serv));
+        if (listener != nullptr) {
+            LOG(INFO) << "Listener started successfully in alternative port\n";
+        } else {
+            LOG(FATAL) << "Listener started fail\n";
+        }
     }
     evconnlistener_set_error_cb(listener, acceptErrorCb);
     event_base_dispatch(base);
@@ -139,16 +134,15 @@ Server::listenerInit (struct evconnlistener *listener, evutil_socket_t fd, struc
     bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
     if (bev != nullptr) {
         LOG(INFO) << "Accept client successfully ,socket fd = " << fd << "\n";
+        //将listener修改为非阻塞的模式
+        evutil_make_socket_nonblocking(fd);
+        //为client添加读和写函数
+        bufferevent_setcb(bev, readCb, writeCb, eventCb, nullptr);
+        //以水平模式读取输入
+        bufferevent_enable(bev, EV_READ);
     } else {
-        LOG(ERROR) << "Failed to create client\n";
-        exit(1);
+        LOG(WARNING) << "Failed to create client\n";
     }
-    //将listener修改为非阻塞的模式
-    evutil_make_socket_nonblocking(fd);
-    //为服务器添加读和写函数
-    bufferevent_setcb(bev, readCb, writeCb, eventCb, nullptr);
-    //以水平模式读取输入
-    bufferevent_enable(bev, EV_READ);
 }
 
 
@@ -167,6 +161,32 @@ void Server::writeCb (struct bufferevent *bev, void *arg) {
 }
 
 void Server::readCb (struct bufferevent *bev, void *arg) {
+    char request[1024] = {0};
+    bufferevent_read(bev, request, sizeof(request));
+    std::string requestHead(request);
+    HttpHeader httpHeader(request);
+    const std::string &uri = httpHeader.getUri();
+    const std::string &staticPage = config->getStaticPage();
+    std::string page;
+    if (uri != "/") {
+
+    } else {
+        //访问的首页
+        page = staticPage + config->getIndexFile();
+    }
+    bool isExists = boost::filesystem::exists(page);
+    //在文件存在的情况下
+    if (isExists) {
+        if (boost::filesystem::is_directory(page)) {
+            //文件是一个目录
+        } else {
+            //存在非目录文件
+            sendResponseHeader(bev, 200, "ok", boost::filesystem::extension(page), boost::filesystem::file_size(page));
+            sendFile(bev, page);
+        }
+    } else {
+
+    }
 
 }
 
@@ -181,6 +201,36 @@ void Server::acceptErrorCb (struct evconnlistener *listener, void *ctx) {
     //服务器中断，重新启动
     event_base_loopexit(base, nullptr);
     evconnlistener_free(listener);
+}
+
+void Server::sendResponseHeader (struct bufferevent *bev, int code,
+                                 const std::string &respCode, const std::string &type,
+                                 long len) {
+
+    std::string resp;
+    resp.resize(128);
+    sprintf((char *) resp.data(), "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", code,
+            respCode.data(), type.data() + 1, len);
+    size_t dataLen = strlen(resp.data());
+    bufferevent_write(bev, resp.data(), dataLen);
+}
+
+void Server::sendFile (struct bufferevent *bev, const std::string &path) {
+
+    bool f = boost::filesystem::exists(path);
+    if (!f) {
+        //code 404
+    } else {
+        std::ifstream file(path);
+        std::string str((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
+        if (file.is_open()) {
+            bufferevent_write(bev, str.c_str(), strlen(str.c_str()));
+        } else {
+            //code 500
+        }
+        file.close();
+    }
 }
 
 
