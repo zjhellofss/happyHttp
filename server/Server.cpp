@@ -40,7 +40,7 @@ Server::~Server () {
 void Server::init () {
     serverInit();
     logInit();
-    chdir("/Users/fss/CLionProjects/happyHttp");
+    chdir(this->initConfig->getWorkPath().data());
 }
 
 Server::Server (const std::string &configPath) : configPath(configPath) {
@@ -71,6 +71,7 @@ void Server::serverInit () {
         initConfig->setStaticPage(d["static_page"].GetString());
         //配置服务器的备用端口
         initConfig->setAlternatePort(d["alternate_port"].GetInt());
+        initConfig->setWorkPath(d["work_path"].GetString());
         config = this->initConfig;
         t.close();
     }

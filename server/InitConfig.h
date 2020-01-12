@@ -9,7 +9,7 @@
 
 class InitConfig {
 public:
-    InitConfig () {}
+    explicit InitConfig () {}
 
     int getPort () const {
         return port;
@@ -51,13 +51,21 @@ public:
         InitConfig::staticPage = staticPage;
     }
 
-private:
+    const std::string &getWorkPath () const {
+        return workPath;
+    }
 
+    void setWorkPath (const std::string &workPath) {
+        InitConfig::workPath = workPath;
+    }
+
+private:
     int port;
     int alternatePort;//服务器的备用端口
     std::string indexFile;
     std::string logPath;
     std::string staticPage;
+    std::string workPath;
 };
 
 #endif //HAPPYHTTP_INITCONFIG_H
