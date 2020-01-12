@@ -28,7 +28,7 @@ void HttpHeader::parse () {
         if (val.size() <= 1) {
             continue;
         } else {
-            this->headers.insert({to_lower_copy(val[0]), val[1]});
+            this->headers.insert({to_lower_copy(val[0]), to_lower_copy(val[1])});
         }
     }
 }

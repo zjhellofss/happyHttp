@@ -9,8 +9,8 @@
 #include <evutil.h>
 #include "InitConfig.h"
 
+#define HEAD_TABLE "<html><head><title>目录名: %s</title></head><body><h1>当前目录: %s</h1><table>"
 #define DIR_PATH "<tr><td><a href=\"%s/\">%s/</a></td><td>%ld</td></tr>"
-#define DIR_NAME "<html><head><title>目录名: %s</title></head>"
 #define REG_PATH "<tr><td><a href=\"%s\">%s</a></td><td>%ld</td></tr>"
 #define DIR_CUR_NAME "<body><h1>当前目录: %s</h1><table>"
 #define END_TABLE "</table></body></html>"
@@ -19,7 +19,7 @@
 class Server {
 
 public:
-    Server (const std::string &configPath);
+    explicit  Server (const std::string &configPath);
 
     void init ();
 
@@ -57,7 +57,6 @@ private:
 
     static void sendDirectory (struct bufferevent *bev, std::string path, std::string host);
 
-    static std::string getDateTime();
 
 
 private:

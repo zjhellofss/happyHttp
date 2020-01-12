@@ -14,12 +14,13 @@
 #include "Server.h"
 #include "HttpHeader.h"
 #include "../include/rapidjson/document.h"
+#include "../postMethod/Post.h"
+#include "HttpConnection.h"
 
 //
 // Created by fushenshen on 2020/1/11.
 //
 InitConfig *config;
-
 void Server::run () {
     if (!initConfig) {
         //获取服务器的配置文件
@@ -41,6 +42,7 @@ Server::~Server () {
 void Server::init () {
     serverInit();
     logInit();
+    LOG(INFO) << "切换到工作目录\n";
     chdir(this->initConfig->getWorkPath().data());
 }
 
@@ -75,6 +77,7 @@ void Server::serverInit () {
         initConfig->setWorkPath(d["work_path"].GetString());
         config = this->initConfig;
         t.close();
+        LOG(INFO) << "日志系统初始化成功\n";
     }
 }
 
@@ -107,7 +110,8 @@ void Server::socketServerProcess () {
     serv.sin_port = htons(this->initConfig->getPort());
     serv.sin_addr.s_addr = htonl(INADDR_ANY);
     auto listener = evconnlistener_new_bind(base, listenerInit, base,
-                                            LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE,
+                                            LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE | LEV_OPT_CLOSE_ON_EXEC |
+                                            LEV_OPT_DEFERRED_ACCEPT,
                                             36, (struct sockaddr *) &serv, sizeof(serv));
     if (listener != nullptr) {
         LOG(INFO) << "Listener started successfully\n";
@@ -124,7 +128,7 @@ void Server::socketServerProcess () {
         }
     }
     evconnlistener_set_error_cb(listener, acceptErrorCb);
-    event_base_dispatch(base);
+    event_base_loop(base, EVLOOP_NO_EXIT_ON_EMPTY);
     evconnlistener_free(listener);
     event_base_free(base);
 
@@ -141,7 +145,7 @@ Server::listenerInit (struct evconnlistener *listener, evutil_socket_t fd, struc
         //将listener修改为非阻塞的模式
         evutil_make_socket_nonblocking(fd);
         //为client添加读和写函数
-        bufferevent_setcb(bev, readCb, writeCb, eventCb, nullptr);
+        bufferevent_setcb(bev, readCb, writeCb, eventCb, new HttpConnection(fd, bev));
         //以水平模式读取输入
         bufferevent_enable(bev, EV_READ);
     } else {
@@ -153,11 +157,10 @@ Server::listenerInit (struct evconnlistener *listener, evutil_socket_t fd, struc
 void Server::eventCb (struct bufferevent *bev, short events, void *arg) {
     if (events & BEV_EVENT_ERROR) {
         LOG(ERROR) << "Read ERROR\n";
-        bufferevent_disable(bev, events);
-    }
-    if (events & (BEV_EVENT_EOF | BEV_EVENT_ERROR)) {
-        LOG(WARNING) << "Read EOF\n";
-        bufferevent_free(bev);
+        auto *connection = (HttpConnection *) arg;
+        delete connection;
+    } else {
+        //不处理
     }
 }
 
@@ -170,51 +173,59 @@ void Server::readCb (struct bufferevent *bev, void *arg) {
     bufferevent_read(bev, request, sizeof(request));
     std::string requestHead(request);
     HttpHeader httpHeader(request);
-    const std::string &uri = httpHeader.getUri();
-    const std::string &staticPage = config->getStaticPage();
-    std::string page;
-    if (uri != "/") {
-        if (!boost::filesystem::extension(uri).empty() && uri[0] != '/') {
-            page = uri;
+    if (httpHeader.getMethod() == "POST") {
+
+    } else if (httpHeader.getMethod() == "GET") {
+        const std::string &uri = httpHeader.getUri();
+        const std::string &staticPage = config->getStaticPage();
+        std::string page;
+        if (uri != "/") {
+            if (!boost::filesystem::extension(uri).empty() && uri[0] != '/') {
+                page = uri;
+            } else {
+                page = "." + uri;
+            }
         } else {
-            page = "." + uri;
+            //访问的首页
+            page = "." + staticPage + config->getIndexFile();
         }
-    } else {
-        //访问的首页
-        page = "." + staticPage + config->getIndexFile();
-    }
-    bool isExists = boost::filesystem::exists(page);
-    auto p = boost::filesystem::current_path().string();
-    //在文件存在的情况下
-    if (isExists) {
-        if (boost::filesystem::is_directory(page)) {
-            //文件是一个目录
-            sendDirectory(bev, page, httpHeader.getValue("host"));
-        } else {
-            //存在非目录文件
-            sendResponseHeader(bev, 200, "ok", boost::filesystem::extension(page), boost::filesystem::file_size(page),
-                               "");
-            sendFile(bev, page);
-        }
-    } else {
-        //todo 文件位于static 目录中
-        page = std::string(page.begin() + 1, page.end());
-        page = "." + staticPage + page;
-        if (boost::filesystem::exists(page)) {
-            //文件是位于static 目录中的一个文件
+        bool isExists = boost::filesystem::exists(page);
+        auto p = boost::filesystem::current_path().string();
+        //在文件存在的情况下
+        if (isExists) {
+            LOG(INFO) << "Visit uri successfully:" << httpHeader.getUri() << "\n";
             if (boost::filesystem::is_directory(page)) {
+                //文件是一个目录
                 sendDirectory(bev, page, httpHeader.getValue("host"));
             } else {
-                sendResponseHeader(bev, 200, "OK", getFileType(boost::filesystem::extension(page)),
-                                   boost::filesystem::file_size(page), "");
+                //存在非目录文件
+                sendResponseHeader(bev, 200, "ok", boost::filesystem::extension(page),
+                                   boost::filesystem::file_size(page),
+                                   "");
                 sendFile(bev, page);
             }
         } else {
-            //404
-            send404(bev);
-        }
+            page = std::string(page.begin() + 1, page.end());
+            page = "." + staticPage + page;
+            if (boost::filesystem::exists(page)) {
+                //文件是位于static 目录中的一个文件
+                LOG(INFO) << "Visit uri successfully:" << httpHeader.getUri() << "\n";
+                if (boost::filesystem::is_directory(page)) {
+                    sendDirectory(bev, page, httpHeader.getValue("host"));
+                } else {
+                    sendResponseHeader(bev, 200, "OK", getFileType(boost::filesystem::extension(page)),
+                                       boost::filesystem::file_size(page), "");
+                    sendFile(bev, page);
+                }
+            } else {
+                //404
+                LOG(INFO) << "404 Not found:" << httpHeader.getUri() << "\n";
+                send404(bev);
+            }
 
+        }
     }
+
 
 }
 
@@ -238,7 +249,7 @@ void Server::sendResponseHeader (struct bufferevent *bev, int code,
     std::string resp;
     resp.resize(512);
     std::string respType = getFileType(type);
-    std::string dateStr = getDateTime();
+    std::string dateStr = DatePostMethod().getDateTime();
     sprintf((char *) resp.data(), "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\nServer:%s\r\nDate:%s\r\n",
             code,
             respCode.data(), type.data(), len, "happyHttp", dateStr.data());
@@ -256,14 +267,13 @@ void Server::sendFile (struct bufferevent *bev, const std::string &path) {
     std::string str((std::istreambuf_iterator<char>(file)),
                     std::istreambuf_iterator<char>());
     if (file.is_open()) {
-        bufferevent_write(bev, str.c_str(), strlen(str.c_str()));
+        bufferevent_write(bev, str.data(), strlen(str.data()));
     } else {
         //code 500
     }
     file.close();
 }
 
-#include <iostream>
 
 void Server::sendDirectory (struct bufferevent *bev, std::string directoryPath, std::string host) {
     if (directoryPath[directoryPath.size() - 1] != '/') {
@@ -278,7 +288,7 @@ void Server::sendDirectory (struct bufferevent *bev, std::string directoryPath, 
     char enStr[128];
     const char *dirname = directoryPath.c_str();
     char *bufStr = (char *) strBuf.c_str();
-    sprintf(bufStr, "<html><head><title>目录名: %s</title></head><body><h1>当前目录: %s</h1><table>", dirname,
+    sprintf(bufStr, HEAD_TABLE, dirname,
             dirname);
     struct dirent **ptr;
     int num = scandir(dirname, &ptr, nullptr, alphasort);
@@ -307,6 +317,7 @@ void Server::sendDirectory (struct bufferevent *bev, std::string directoryPath, 
         sprintf(bufStr + strlen(bufStr), END_TABLE);
         bufferevent_write(bev, bufStr, strlen(bufStr));
     }
+    free(ptr);
 }
 
 
@@ -350,14 +361,7 @@ void Server::send404 (bufferevent *bev) {
     sendFile(bev, host);
 }
 
-std::string Server::getDateTime () {
-    std::string str;
-    str.resize(128);
-    time_t now = time(0);
-    struct tm tm = *gmtime(&now);
-    strftime((char *) str.data(), str.size(), "%a, %d %b %Y %H:%M:%S %Z", &tm);
-    return str;
-}
+
 
 
 
