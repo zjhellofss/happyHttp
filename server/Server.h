@@ -57,6 +57,8 @@ private:
 
     static void sendDirectory (struct bufferevent *bev, std::string path, std::string host);
 
+    static std::string getDateTime();
+
 
 private:
     InitConfig *initConfig = nullptr;

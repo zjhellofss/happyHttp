@@ -6,12 +6,13 @@
 #include <event2/event.h>
 #include <event2/listener.h>
 #include <event2/thread.h>
+#include <dirent.h>
 #include <event.h>
 #include <boost/filesystem.hpp>
 #include <sys/stat.h>
+#include <ctime>
 #include "Server.h"
 #include "HttpHeader.h"
-#include <dirent.h>
 #include "../include/rapidjson/document.h"
 
 //
@@ -235,10 +236,12 @@ void Server::sendResponseHeader (struct bufferevent *bev, int code,
                                  long len, std::string host) {
 
     std::string resp;
-    resp.resize(256);
+    resp.resize(512);
     std::string respType = getFileType(type);
-    sprintf((char *) resp.data(), "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\n", code,
-            respCode.data(), type.data(), len);
+    std::string dateStr = getDateTime();
+    sprintf((char *) resp.data(), "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\nServer:%s\r\nDate:%s\r\n",
+            code,
+            respCode.data(), type.data(), len, "happyHttp", dateStr.data());
     if (code == 301) {
         sprintf((char *) resp.data() + strlen(resp.data()), "Location:http://%s\r\n", host.data());
     }
@@ -345,6 +348,15 @@ void Server::send404 (bufferevent *bev) {
     int len = static_cast<int>(boost::filesystem::file_size(host));
     sendResponseHeader(bev, 404, "Not Found", "text/html", len, "");
     sendFile(bev, host);
+}
+
+std::string Server::getDateTime () {
+    std::string str;
+    str.resize(128);
+    time_t now = time(0);
+    struct tm tm = *gmtime(&now);
+    strftime((char *) str.data(), str.size(), "%a, %d %b %Y %H:%M:%S %Z", &tm);
+    return str;
 }
 
 
