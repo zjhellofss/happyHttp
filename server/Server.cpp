@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include "Server.h"
 #include "HttpHeader.h"
+#include <dirent.h>
 #include "../include/rapidjson/document.h"
 
 //
@@ -39,6 +40,7 @@ Server::~Server () {
 void Server::init () {
     serverInit();
     logInit();
+    chdir("/Users/fss/CLionProjects/happyHttp");
 }
 
 Server::Server (const std::string &configPath) : configPath(configPath) {
@@ -149,6 +151,7 @@ Server::listenerInit (struct evconnlistener *listener, evutil_socket_t fd, struc
 void Server::eventCb (struct bufferevent *bev, short events, void *arg) {
     if (events & BEV_EVENT_ERROR) {
         LOG(ERROR) << "Read ERROR\n";
+        bufferevent_disable(bev, events);
     }
     if (events & (BEV_EVENT_EOF | BEV_EVENT_ERROR)) {
         LOG(WARNING) << "Read EOF\n";
@@ -157,7 +160,7 @@ void Server::eventCb (struct bufferevent *bev, short events, void *arg) {
 }
 
 void Server::writeCb (struct bufferevent *bev, void *arg) {
-
+    bufferevent_flush(bev, EV_WRITE, BEV_FLUSH);
 }
 
 void Server::readCb (struct bufferevent *bev, void *arg) {
@@ -169,22 +172,45 @@ void Server::readCb (struct bufferevent *bev, void *arg) {
     const std::string &staticPage = config->getStaticPage();
     std::string page;
     if (uri != "/") {
-
+        if (!boost::filesystem::extension(uri).empty() && uri[0] != '/') {
+            page = uri;
+        } else {
+            page = "." + uri;
+        }
     } else {
         //访问的首页
-        page = staticPage + config->getIndexFile();
+        page = "." + staticPage + config->getIndexFile();
     }
     bool isExists = boost::filesystem::exists(page);
+    auto p = boost::filesystem::current_path().string();
     //在文件存在的情况下
     if (isExists) {
         if (boost::filesystem::is_directory(page)) {
             //文件是一个目录
+            sendDirectory(bev, page, httpHeader.getValue("host"));
         } else {
             //存在非目录文件
-            sendResponseHeader(bev, 200, "ok", boost::filesystem::extension(page), boost::filesystem::file_size(page));
+            sendResponseHeader(bev, 200, "ok", boost::filesystem::extension(page), boost::filesystem::file_size(page),
+                               "");
             sendFile(bev, page);
         }
     } else {
+        //todo 文件位于static 目录中
+        page = std::string(page.begin() + 1, page.end());
+        page = "." + staticPage + page;
+        if (boost::filesystem::exists(page)) {
+            //文件是位于static 目录中的一个文件
+            if (boost::filesystem::is_directory(page)) {
+                sendDirectory(bev, page, httpHeader.getValue("host"));
+            } else {
+                sendResponseHeader(bev, 200, "OK", getFileType(boost::filesystem::extension(page)),
+                                   boost::filesystem::file_size(page), "");
+                sendFile(bev, page);
+            }
+        } else {
+            //404
+            send404(bev);
+        }
 
     }
 
@@ -205,33 +231,124 @@ void Server::acceptErrorCb (struct evconnlistener *listener, void *ctx) {
 
 void Server::sendResponseHeader (struct bufferevent *bev, int code,
                                  const std::string &respCode, const std::string &type,
-                                 long len) {
+                                 long len, std::string host) {
 
     std::string resp;
-    resp.resize(128);
-    sprintf((char *) resp.data(), "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\n\r\n", code,
-            respCode.data(), type.data() + 1, len);
+    resp.resize(256);
+    std::string respType = getFileType(type);
+    sprintf((char *) resp.data(), "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\n", code,
+            respCode.data(), type.data(), len);
+    if (code == 301) {
+        sprintf((char *) resp.data() + strlen(resp.data()), "Location:http://%s\r\n", host.data());
+    }
+    sprintf((char *) resp.data() + strlen(resp.data()), "\r\n");
     size_t dataLen = strlen(resp.data());
     bufferevent_write(bev, resp.data(), dataLen);
 }
 
 void Server::sendFile (struct bufferevent *bev, const std::string &path) {
 
-    bool f = boost::filesystem::exists(path);
-    if (!f) {
-        //code 404
+    std::ifstream file(path);
+    std::string str((std::istreambuf_iterator<char>(file)),
+                    std::istreambuf_iterator<char>());
+    if (file.is_open()) {
+        bufferevent_write(bev, str.c_str(), strlen(str.c_str()));
     } else {
-        std::ifstream file(path);
-        std::string str((std::istreambuf_iterator<char>(file)),
-                        std::istreambuf_iterator<char>());
-        if (file.is_open()) {
-            bufferevent_write(bev, str.c_str(), strlen(str.c_str()));
-        } else {
-            //code 500
+        //code 500
+    }
+    file.close();
+}
+
+#include <iostream>
+
+void Server::sendDirectory (struct bufferevent *bev, std::string directoryPath, std::string host) {
+    if (directoryPath[directoryPath.size() - 1] != '/') {
+        send404(bev);
+        return;
+    }
+    sendResponseHeader(bev, 200, "OK", "text/html; charset=utf-8", -1, "");
+    std::string strBuf;
+    strBuf.resize(128);
+    std::string path;
+    path.reserve(128);
+    char enStr[128];
+    const char *dirname = directoryPath.c_str();
+    char *bufStr = (char *) strBuf.c_str();
+    sprintf(bufStr, "<html><head><title>目录名: %s</title></head><body><h1>当前目录: %s</h1><table>", dirname,
+            dirname);
+    struct dirent **ptr;
+    int num = scandir(dirname, &ptr, nullptr, alphasort);
+    if (num <= 0) {
+        //log
+    } else {
+        for (int i = 0; i < num; ++i) {
+            char *pathStr = (char *) path.c_str();
+            char *name = ptr[i]->d_name;
+            sprintf(pathStr, "%s/%s", dirname, name);
+            struct stat st{};
+            stat(pathStr, &st);
+            encodeStr(enStr, sizeof(enStr), name);
+            if (S_ISREG(st.st_mode)) {
+                sprintf(bufStr + strlen(bufStr),
+                        REG_PATH,
+                        enStr, name, (long) st.st_size);
+            } else if (S_ISDIR(st.st_mode)) {
+                sprintf(bufStr + strlen(bufStr),
+                        DIR_PATH,
+                        enStr, name, (long) st.st_size);
+            }
+            bufferevent_write(bev, bufStr, strlen(bufStr));
+            strBuf.clear();
         }
-        file.close();
+        sprintf(bufStr + strlen(bufStr), END_TABLE);
+        bufferevent_write(bev, bufStr, strlen(bufStr));
     }
 }
+
+
+void Server::encodeStr (char *to, size_t toSize, char *from) {
+    int toLen;
+
+    for (toLen = 0; *from != '\0' && toLen + 4 < toSize; ++from) {
+        if (isalnum(*from) || strchr("/_.-~", *from) != (char *) 0) {
+            *to = *from;
+            ++to;
+            ++toLen;
+        } else {
+            sprintf(to, "%%%02x", (int) *from & 0xff);
+            to += 3;
+            toLen += 3;
+        }
+    }
+    *to = '\0';
+}
+
+std::string Server::getFileType (const std::string &filetype) {
+    if (filetype.empty()) {
+        return "text/plain; charset=utf-8";
+    }
+    if (filetype == ".html" || filetype == ".htm") {
+        return "text/html; charset=utf-8";
+    }
+    if (filetype == ".jpg" || filetype == ".jpeg") {
+        return "image/jpeg";
+    }
+    if (filetype == ".gif") {
+        return "image/gif";
+    }
+    return "text/plain; charset=utf-8";
+}
+
+void Server::send404 (bufferevent *bev) {
+    std::string host = "." + config->getStaticPage() + "404.html";
+    int len = static_cast<int>(boost::filesystem::file_size(host));
+    sendResponseHeader(bev, 404, "Not Found", "text/html", len, "");
+    sendFile(bev, host);
+}
+
+
+
+
 
 
 
