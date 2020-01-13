@@ -282,10 +282,10 @@ void Server::sendDirectory (struct bufferevent *bev, std::string directoryPath, 
     }
     sendResponseHeader(bev, 200, "OK", "text/html; charset=utf-8", -1, "");
     std::string strBuf;
-    strBuf.resize(128);
+    strBuf.resize(512);
     std::string path;
-    path.reserve(128);
-    char enStr[128];
+    path.reserve(512);
+    char enStr[512];
     const char *dirname = directoryPath.c_str();
     char *bufStr = (char *) strBuf.c_str();
     sprintf(bufStr, HEAD_TABLE, dirname,
