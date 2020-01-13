@@ -7,7 +7,7 @@
 int main (int argc, char *argv[]) {
 
 
-    Server s("/Users/fss/CLionProjects/happyHttp/www/http/properties/properties.json");
+    Server s("./www/http/properties/properties.json");
     s.run();
     return 0;
 }

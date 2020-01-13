@@ -19,7 +19,7 @@
 class Server {
 
 public:
-    explicit  Server (const std::string &configPath);
+    explicit Server (const std::string &configPath);
 
     void init ();
 
@@ -58,16 +58,16 @@ private:
     static void sendDirectory (struct bufferevent *bev, std::string path, std::string host);
 
 
-
 private:
     InitConfig *initConfig = nullptr;
     std::string configPath;
 
     static void encodeStr (char *, size_t toSize, char *from);
 
-    static std::string getFileType (const std::string &filetype);
+    static const std::string &getFileType (const std::string &filetype);
 
     static void send404 (bufferevent *bev);
+    static  const std::string
 };
 
 

@@ -17,13 +17,18 @@ public:
         this->parse();
     }
 
-    std::string getValue (const std::string head) const {
+    const std::string &getValue (const std::string head) const {
         return this->headers.at(head);
     }
 
-    const std::string &getMethod () const;
+    const std::string &getUri () const {
+        return this->uri;
+    }
 
-    const std::string &getUri () const;
+    const std::string &getMethod () const {
+        return this->method;
+    }
+
 
 private:
     void parse ();

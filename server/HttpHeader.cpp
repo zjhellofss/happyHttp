@@ -33,11 +33,5 @@ void HttpHeader::parse () {
     }
 }
 
-const std::string &HttpHeader::getMethod () const {
-    return method;
-}
 
-const std::string &HttpHeader::getUri () const {
-    return uri;
-}
 
