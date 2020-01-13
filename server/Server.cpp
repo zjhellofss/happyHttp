@@ -20,6 +20,7 @@
 // Created by fushenshen on 2020/1/11.
 //
 InitConfig *config;
+
 void Server::run () {
     if (!initConfig) {
         //获取服务器的配置文件
@@ -248,7 +249,7 @@ void Server::sendResponseHeader (struct bufferevent *bev, int code,
     std::string resp;
     resp.resize(512);
     std::string respType = getFileType(type);
-    std::string dateStr = DatePostMethod().getDateTime();
+    std::string dateStr = getDateTime();
     sprintf((char *) resp.data(), "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\nServer:%s\r\nDate:%s\r\n",
             code,
             respCode.data(), type.data(), len, "happyHttp", dateStr.data());
@@ -337,7 +338,7 @@ void Server::encodeStr (char *to, size_t toSize, char *from) {
     *to = '\0';
 }
 
-std::string Server::getFileType (const std::string &filetype) {
+const std::string Server::getFileType (const std::string &filetype) {
     if (filetype.empty()) {
         return "text/plain; charset=utf-8";
     }
@@ -359,6 +360,17 @@ void Server::send404 (bufferevent *bev) {
     sendResponseHeader(bev, 404, "Not Found", "text/html", len, "");
     sendFile(bev, host);
 }
+
+std::string Server::getDateTime () {
+    std::string str;
+    str.resize(128);
+    time_t now = time(nullptr);
+    struct tm tm = *gmtime(&now);
+    strftime((char *) str.data(), str.size(), "%a, %d %b %Y %H:%M:%S %Z", &tm);
+    return str;
+}
+
+
 
 
 
