@@ -21,7 +21,7 @@
 //
 InitConfig *config;
 
-void Server::run () {
+void Server::run() {
     if (!initConfig) {
         //获取服务器的配置文件
         this->init();
@@ -29,7 +29,7 @@ void Server::run () {
     this->socketServerProcess();
 }
 
-Server::~Server () {
+Server::~Server() {
     if (initConfig != nullptr) {
         delete initConfig;
         initConfig = nullptr;
@@ -39,18 +39,18 @@ Server::~Server () {
     google::ShutdownGoogleLogging();
 }
 
-void Server::init () {
+void Server::init() {
     serverInit();
     logInit();
     LOG(INFO) << "切换到工作目录\n";
     chdir(this->initConfig->getWorkPath().data());
 }
 
-Server::Server (const std::string &configPath) : configPath(configPath) {
+Server::Server(const std::string &configPath) : configPath(configPath) {
 
 }
 
-void Server::serverInit () {
+void Server::serverInit() {
     if (this->initConfig != nullptr) {
         return;
     } else {
@@ -81,7 +81,7 @@ void Server::serverInit () {
     }
 }
 
-void Server::logInit () {
+void Server::logInit() {
     google::InitGoogleLogging("happyHttp");//日志前缀
     std::string basePath = this->initConfig->getLogPath();
 
@@ -96,11 +96,11 @@ void Server::logInit () {
     google::SetLogDestination(google::ERROR, (basePath + "ERROR_").data());
     google::SetLogDestination(google::FATAL, (basePath + "FATAL_").data());
 
-    google::SetStderrLogging(google::INFO);
+    google::SetStderrLogging(google::WARNING);
 }
 
 
-void Server::socketServerProcess () {
+void Server::socketServerProcess() {
     sockaddr_in serv{};
     evthread_use_pthreads();
     event_base *base;
@@ -135,7 +135,7 @@ void Server::socketServerProcess () {
 }
 
 void
-Server::listenerInit (struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr *addr, int len, void *ptr) {
+Server::listenerInit(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr *addr, int len, void *ptr) {
 
     auto *base = (struct event_base *) ptr;
     bufferevent *bev;
@@ -154,7 +154,7 @@ Server::listenerInit (struct evconnlistener *listener, evutil_socket_t fd, struc
 }
 
 
-void Server::eventCb (struct bufferevent *bev, short events, void *arg) {
+void Server::eventCb(struct bufferevent *bev, short events, void *arg) {
     if (events & BEV_EVENT_ERROR) {
         LOG(ERROR) << "Read ERROR\n";
         auto *connection = (HttpConnection *) arg;
@@ -164,11 +164,11 @@ void Server::eventCb (struct bufferevent *bev, short events, void *arg) {
     }
 }
 
-void Server::writeCb (struct bufferevent *bev, void *arg) {
+void Server::writeCb(struct bufferevent *bev, void *arg) {
     bufferevent_flush(bev, EV_WRITE, BEV_FLUSH);
 }
 
-void Server::readCb (struct bufferevent *bev, void *arg) {
+void Server::readCb(struct bufferevent *bev, void *arg) {
     char request[1024] = {0};
     bufferevent_read(bev, request, sizeof(request));
     std::string requestHead(request);
@@ -205,7 +205,7 @@ void Server::readCb (struct bufferevent *bev, void *arg) {
                 sendFile(bev, page);
             }
         } else {
-            page = std::string(page.begin() + 1, page.end());
+            page.erase(page.begin());
             page = "." + staticPage + page;
             if (boost::filesystem::exists(page)) {
                 //文件是位于static 目录中的一个文件
@@ -229,7 +229,7 @@ void Server::readCb (struct bufferevent *bev, void *arg) {
 
 }
 
-void Server::acceptErrorCb (struct evconnlistener *listener, void *ctx) {
+void Server::acceptErrorCb(struct evconnlistener *listener, void *ctx) {
     struct event_base *base = evconnlistener_get_base(listener);
     int err = EVUTIL_SOCKET_ERROR();
     char buf[128];
@@ -242,9 +242,9 @@ void Server::acceptErrorCb (struct evconnlistener *listener, void *ctx) {
     evconnlistener_free(listener);
 }
 
-void Server::sendResponseHeader (struct bufferevent *bev, int code,
-                                 const std::string &respCode, const std::string &type,
-                                 long len, std::string host) {
+void Server::sendResponseHeader(struct bufferevent *bev, int code,
+                                const std::string &respCode, const std::string &type,
+                                long len, std::string host) {
 
     std::string resp;
     resp.resize(512);
@@ -261,21 +261,26 @@ void Server::sendResponseHeader (struct bufferevent *bev, int code,
     bufferevent_write(bev, resp.data(), dataLen);
 }
 
-void Server::sendFile (struct bufferevent *bev, const std::string &path) {
+void Server::sendFile(struct bufferevent *bev, const std::string &path) {
 
     std::ifstream file(path);
-    std::string str((std::istreambuf_iterator<char>(file)),
-                    std::istreambuf_iterator<char>());
+    const int length = 512;
     if (file.is_open()) {
-        bufferevent_write(bev, str.data(), strlen(str.data()));
+        while (!file.eof()) {
+            char buf[length];
+            memset(buf, '\0', length);
+            file.read(buf, length);
+            bufferevent_write(bev, buf, strlen(buf));
+        }
+        file.close();
     } else {
-        //code 500
+        //code 404
+        send404(bev);
     }
-    file.close();
 }
 
 
-void Server::sendDirectory (struct bufferevent *bev, std::string directoryPath, std::string host) {
+void Server::sendDirectory(struct bufferevent *bev, std::string directoryPath, std::string host) {
     if (directoryPath[directoryPath.size() - 1] != '/') {
         send404(bev);
         return;
@@ -321,7 +326,7 @@ void Server::sendDirectory (struct bufferevent *bev, std::string directoryPath, 
 }
 
 
-void Server::encodeStr (char *to, size_t toSize, char *from) {
+void Server::encodeStr(char *to, size_t toSize, char *from) {
     int toLen;
 
     for (toLen = 0; *from != '\0' && toLen + 4 < toSize; ++from) {
@@ -338,7 +343,7 @@ void Server::encodeStr (char *to, size_t toSize, char *from) {
     *to = '\0';
 }
 
-const std::string Server::getFileType (const std::string &filetype) {
+const std::string Server::getFileType(const std::string &filetype) {
     if (filetype.empty()) {
         return "text/plain; charset=utf-8";
     }
@@ -354,14 +359,14 @@ const std::string Server::getFileType (const std::string &filetype) {
     return "text/plain; charset=utf-8";
 }
 
-void Server::send404 (bufferevent *bev) {
+void Server::send404(bufferevent *bev) {
     std::string host = "." + config->getStaticPage() + "404.html";
     int len = static_cast<int>(boost::filesystem::file_size(host));
     sendResponseHeader(bev, 404, "Not Found", "text/html", len, "");
     sendFile(bev, host);
 }
 
-std::string Server::getDateTime () {
+std::string Server::getDateTime() {
     std::string str;
     str.resize(128);
     time_t now = time(nullptr);
