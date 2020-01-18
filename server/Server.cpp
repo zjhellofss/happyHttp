@@ -11,6 +11,7 @@
 #include <boost/filesystem.hpp>
 #include <sys/stat.h>
 #include <ctime>
+#include <fcntl.h>
 #include "Server.h"
 #include "HttpHeader.h"
 #include "../include/rapidjson/document.h"
@@ -131,7 +132,6 @@ void Server::socketServerProcess() {
     event_base_loop(base, EVLOOP_NO_EXIT_ON_EMPTY);
     evconnlistener_free(listener);
     event_base_free(base);
-
 }
 
 void
@@ -237,7 +237,7 @@ void Server::acceptErrorCb(struct evconnlistener *listener, void *ctx) {
 
                  "Shutting down.\n", err, evutil_socket_error_to_string(err));
     LOG(ERROR) << buf;
-    //服务器中断，重新启动
+    //todo 服务器中断，重新启动
     event_base_loopexit(base, nullptr);
     evconnlistener_free(listener);
 }
@@ -263,16 +263,16 @@ void Server::sendResponseHeader(struct bufferevent *bev, int code,
 
 void Server::sendFile(struct bufferevent *bev, const std::string &path) {
 
-    std::ifstream file(path);
-    const int length = 512;
-    if (file.is_open()) {
-        while (!file.eof()) {
-            char buf[length];
-            memset(buf, '\0', length);
-            file.read(buf, length);
-            bufferevent_write(bev, buf, strlen(buf));
+    const int length = 4196;
+    int fileFd = open(path.data(), O_RDONLY);
+    if (fileFd > 0) {
+        char *buf = new char[length];
+        int len = 0;
+        while ((len = (int) read(fileFd, buf, length * sizeof(char))) > 0) {
+            bufferevent_write(bev, buf, (size_t) len);
         }
-        file.close();
+        close(fileFd);
+        delete[]buf;
     } else {
         //code 404
         send404(bev);
@@ -343,7 +343,7 @@ void Server::encodeStr(char *to, size_t toSize, char *from) {
     *to = '\0';
 }
 
-const std::string Server::getFileType(const std::string &filetype) {
+std::string Server::getFileType(const std::string &filetype) {
     if (filetype.empty()) {
         return "text/plain; charset=utf-8";
     }

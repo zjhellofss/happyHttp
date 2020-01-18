@@ -64,7 +64,7 @@ private:
 
     static void encodeStr (char *, size_t toSize, char *from);
 
-    static const std::string getFileType (const std::string &filetype);
+    static std::string getFileType (const std::string &filetype);
 
     static void send404 (bufferevent *bev);
 
