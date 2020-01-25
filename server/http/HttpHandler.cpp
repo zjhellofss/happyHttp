@@ -119,56 +119,93 @@ void readCb(struct bufferevent *bev, void *arg) {
 
     } else if (httpHeader.getMethod() == "GET") {
         const std::string &uri = httpHeader.getUri();
-        const std::string &staticPage = ServerFactory::getInitConfig()->getStaticPage();
-        std::string page;
-        if (uri != "/") {
-            if (!boost::filesystem::extension(uri).empty() && uri[0] != '/') {
-                page = uri;
+        if (boost::filesystem::extension(uri) == ".cgi") {
+            int fd[2];
+            int r = pipe(fd);
+            assert(!r);
+            pid_t pid = fork();
+            if (!pid) {
+                //child
+                close(fd[0]);
+                dup2(fd[1], STDOUT_FILENO);
+                const std::string &binFile = "./" + std::string(uri.begin() + 1, uri.end());
+                LOG(INFO) << binFile << "\n";
+                assert(boost::filesystem::exists(binFile));
+                execlp(binFile.data(), binFile.data(), nullptr);
+            } else if (pid > 0) {
+                //parent
+                int status = 0;
+                close(fd[1]);
+                const int length = 4096;
+                char *buf = new char[length];
+                int len = 0;
+                std::string str = "";
+
+                while ((len = (int) read(fd[0], buf, length * sizeof(char))) > 0) {
+                    *(buf + len) = '\0';
+                    str += buf;
+                }
+                delete[]buf;
+                sendResponseHeader(bev, 200, "OK", ".cgi",
+                                   str.size(), "");
+                bufferevent_write(bev, str.data(), str.size());
+                waitpid(pid, nullptr, status);
+                close(fd[0]);
             } else {
-                page = "." + uri;
+                //todo
             }
         } else {
-            //访问的首页
-            page = "." + staticPage + ServerFactory::getInitConfig()->getIndexFile();
-        }
-        LOG(INFO) << page << "\n";
-        bool isExists = boost::filesystem::exists(page);
-        auto p = boost::filesystem::current_path().string();
-        //在文件存在的情况下
-        if (isExists) {
-            LOG(INFO) << "Visit uri successfully:" << httpHeader.getUri() << "\n";
-            if (boost::filesystem::is_directory(page)) {
-                //文件是一个目录
-                sendDirectory(bev, page, httpHeader.getValue("host"));
+            const std::string &staticPage = ServerFactory::getInitConfig()->getStaticPage();
+            std::string page;
+            if (uri != "/") {
+                if (!boost::filesystem::extension(uri).empty() && uri[0] != '/') {
+                    page = uri;
+                } else {
+                    page = "." + uri;
+                }
             } else {
-                //存在非目录文件
-                sendResponseHeader(bev, 200, "ok", boost::filesystem::extension(page),
-                                   boost::filesystem::file_size(page),
-                                   "");
-                sendFile(bev, page);
+                //访问的首页
+                page = staticPage + ServerFactory::getInitConfig()->getIndexFile();
             }
-        } else {
-            assert(page.size() >= 2);
-            page.erase(page.begin(), page.begin() + 1);
-            page = staticPage + page;
             LOG(INFO) << page << "\n";
-            if (boost::filesystem::exists(page)) {
-                //文件是位于static 目录中的一个文件
+            bool isExists = boost::filesystem::exists(page);
+            auto p = boost::filesystem::current_path().string();
+            //在文件存在的情况下
+            if (isExists) {
                 LOG(INFO) << "Visit uri successfully:" << httpHeader.getUri() << "\n";
                 if (boost::filesystem::is_directory(page)) {
+                    //文件是一个目录
                     sendDirectory(bev, page, httpHeader.getValue("host"));
                 } else {
-                    sendResponseHeader(bev, 200, "OK", getFileType(boost::filesystem::extension(page)),
-                                       boost::filesystem::file_size(page), "");
+                    //存在非目录文件
+                    sendResponseHeader(bev, 200, "ok", boost::filesystem::extension(page),
+                                       boost::filesystem::file_size(page),
+                                       "");
                     sendFile(bev, page);
                 }
             } else {
-                //404
-                LOG(INFO) << "404 Not found:" << httpHeader.getUri() << "\n";
-                send404(bev);
-            }
+                assert(page.size() >= 2);
+                page.erase(page.begin(), page.begin() + 1);
+                page = staticPage + page;
+                if (boost::filesystem::exists(page)) {
+                    //文件是位于static 目录中的一个文件
+                    LOG(INFO) << "Visit uri successfully:" << httpHeader.getUri() << "\n";
+                    if (boost::filesystem::is_directory(page)) {
+                        sendDirectory(bev, page, httpHeader.getValue("host"));
+                    } else {
+                        sendResponseHeader(bev, 200, "OK", getFileType(boost::filesystem::extension(page)),
+                                           boost::filesystem::file_size(page), "");
+                        sendFile(bev, page);
+                    }
+                } else {
+                    //404
+                    LOG(INFO) << "404 Not found:" << httpHeader.getUri() << "\n";
+                    send404(bev);
+                }
 
+            }
         }
+
     }
 
 
@@ -183,8 +220,6 @@ void acceptErrorCb(struct evconnlistener *listener, void *ctx) {
                  "Shutting down.\n", err, evutil_socket_error_to_string(err));
     LOG(ERROR) << buf;
     //todo 服务器中断，重新启动
-    event_base_loopexit(base, nullptr);
-    evconnlistener_free(listener);
 }
 
 void sendResponseHeader(struct bufferevent *bev, int code,
@@ -193,8 +228,8 @@ void sendResponseHeader(struct bufferevent *bev, int code,
 
     std::string resp;
     resp.resize(512);
-    std::string respType = getFileType(type);
-    std::string dateStr = getDateTime();
+    const std::string &respType = getFileType(type);
+    const std::string dateStr = getDateTime();
     sprintf((char *) resp.data(), "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\nServer:%s\r\nDate:%s\r\n",
             code,
             respCode.data(), type.data(), len, "happyHttp", dateStr.data());
@@ -291,17 +326,16 @@ void encodeStr(char *to, size_t toSize, char *from) {
 std::string getFileType(const std::string &filetype) {
     if (filetype.empty()) {
         return "text/plain; charset=utf-8";
-    }
-    if (filetype == ".html" || filetype == ".htm") {
+    } else if (filetype == ".html" || filetype == ".htm") {
+        return "text/html; charset=utf-8";
+    } else if (filetype == ".jpg" || filetype == ".jpeg") {
+        return "image/jpeg";
+    } else if (filetype == ".gif") {
+        return "image/gif";
+    } else if (filetype == ".cgi") {
         return "text/html; charset=utf-8";
     }
-    if (filetype == ".jpg" || filetype == ".jpeg") {
-        return "image/jpeg";
-    }
-    if (filetype == ".gif") {
-        return "image/gif";
-    }
-    return "text/plain; charset=utf-8";
+    return "text/html; charset=utf-8";
 }
 
 void send404(bufferevent *bev) {

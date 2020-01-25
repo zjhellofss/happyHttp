@@ -3,7 +3,7 @@
   "index": "hello.html",
   "log_path": "/Users/fss/serverlog/",
   "alternate_port": 9998,
-  "static_page": "/www/http/pages/static/",
-  "work_path": "/Users/fss/CLionProjects/happyHttp"
+  "static_page": "/Users/fss/CLionProjects/httpserver/happyHttp/www/http/pages/static/",
+  "work_path": "/Users/fss/"
 }
 
