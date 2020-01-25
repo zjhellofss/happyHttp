@@ -13,9 +13,9 @@
 #include "HttpConnection.h"
 #include <glog/logging.h>
 #include <event2/event.h>
+#include <cstdlib>
 #include "HttpHandler.h"
 #include "HttpHeader.h"
-
 
 std::shared_ptr<Server> ServerFactory::server = nullptr;
 
@@ -39,7 +39,7 @@ void ServerFactory::run(const std::string &path) {
 InitConfig *ServerFactory::getInitConfig() {
     assert(server != nullptr);
     Server *s = server.get();
-    assert(s != NULL);
+    assert(s != nullptr);
     return s->getInitConfig();
 }
 
@@ -130,8 +130,18 @@ void readCb(struct bufferevent *bev, void *arg) {
                 dup2(fd[1], STDOUT_FILENO);
                 const std::string &binFile = "./" + std::string(uri.begin() + 1, uri.end());
                 LOG(INFO) << binFile << "\n";
-                assert(boost::filesystem::exists(binFile));
-                execlp(binFile.data(), binFile.data(), nullptr);
+                if (boost::filesystem::exists(binFile)) {
+                    auto m = httpHeader.getParams();
+                    for (const auto &p:m) {
+                        const std::string &n = p.first;
+                        const std::string &v = p.second;
+                        int res = setenv(n.data(), v.data(), 1);
+                        assert(!res);
+                    }
+                    execlp(binFile.data(), binFile.data(), nullptr);
+                } else {
+                    send404(bev);
+                }
             } else if (pid > 0) {
                 //parent
                 int status = 0;
@@ -139,7 +149,7 @@ void readCb(struct bufferevent *bev, void *arg) {
                 const int length = 4096;
                 char *buf = new char[length];
                 int len = 0;
-                std::string str = "";
+                std::string str;
 
                 while ((len = (int) read(fd[0], buf, length * sizeof(char))) > 0) {
                     *(buf + len) = '\0';

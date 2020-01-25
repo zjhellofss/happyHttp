@@ -18,6 +18,7 @@ public:
     static InitConfig *getInitConfig();
 
 
+
 private :
     static std::shared_ptr<Server> server;
 };

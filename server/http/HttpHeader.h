@@ -21,6 +21,8 @@ public:
         return this->headers.at(head);
     }
 
+    const std::map<std::string, std::string> &getParams() const;
+
     const std::string &getUri() const {
         return this->uri;
     }

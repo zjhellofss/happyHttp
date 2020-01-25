@@ -94,5 +94,9 @@ void HttpHeader::parse() {
     }
 }
 
+const std::map<std::string, std::string> &HttpHeader::getParams() const {
+    return params;
+}
+
 
 
