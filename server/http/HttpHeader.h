@@ -13,28 +13,30 @@
 class HttpHeader {
 
 public:
-    explicit HttpHeader (std::string rawHeaders) : rawHeaders(std::move(rawHeaders)) {
+    explicit HttpHeader(std::string rawHeaders) : rawHeaders(std::move(rawHeaders)) {
         this->parse();
     }
 
-    const std::string &getValue (const std::string head) const {
+    const std::string &getValue(const std::string head) const {
         return this->headers.at(head);
     }
 
-    const std::string &getUri () const {
+    const std::string &getUri() const {
         return this->uri;
     }
 
-    const std::string &getMethod () const {
+    const std::string &getMethod() const {
         return this->method;
     }
 
 
 private:
-    void parse ();
+    void parse();
 
 private:
     std::map<std::string, std::string> headers;
+    //http中的参数
+    std::map<std::string, std::string> params;
     std::string method;
     std::string uri;
     std::string rawHeaders;

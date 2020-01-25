@@ -169,7 +169,7 @@ void readCb(struct bufferevent *bev, void *arg) {
             }
             LOG(INFO) << page << "\n";
             bool isExists = boost::filesystem::exists(page);
-            auto p = boost::filesystem::current_path().string();
+            auto p = ServerFactory::getInitConfig()->getWorkPath();
             //在文件存在的情况下
             if (isExists) {
                 LOG(INFO) << "Visit uri successfully:" << httpHeader.getUri() << "\n";
@@ -248,11 +248,14 @@ void sendFile(struct bufferevent *bev, const std::string &path) {
     if (fileFd > 0) {
         char *buf = new char[length];
         int len = 0;
+        std::string str;
         while ((len = (int) read(fileFd, buf, length * sizeof(char))) > 0) {
-            bufferevent_write(bev, buf, (size_t) len);
+            *(buf + len) = '\0';
+            str += buf;
         }
         close(fileFd);
         delete[]buf;
+        bufferevent_write(bev, str.data(), str.size());
     } else {
         //code 404
         send404(bev);

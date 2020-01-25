@@ -9,26 +9,87 @@
 #include <boost/algorithm/string/regex.hpp>
 #include <string>
 #include <vector>
+#include <iostream>
 
-void HttpHeader::parse () {
+void HttpHeader::parse() {
     using namespace boost::algorithm;
     std::vector<std::string> headerVec;
     split_regex(headerVec, this->rawHeaders, boost::regex("\r\n"));
 
     std::string s1(*(headerVec.begin()));
     std::vector<std::string> methodVec;
-    split(methodVec, s1, is_any_of(" "));
-    assert(methodVec.size() == 3);
+    std::string::iterator iter = s1.begin();
+    std::string::iterator preIter = iter;
+    bool hasParam = false;
+
+    for (; iter != s1.end(); ++iter) {
+        char c = *iter;
+        if (c == ' ') {
+            methodVec.push_back(std::move(std::string(preIter, iter)));
+            preIter = iter + 1;
+        } else if (c == '&' || c == '?') {
+            methodVec.push_back(std::move(std::string(preIter, iter)));
+            ++iter;
+            preIter = iter;
+            std::string paramsName;
+            std::string paramsValue;
+            while (*iter != ' ') {
+                while (*iter != ' ') {
+                    //parse name
+                    if (*iter == '=') {
+                        paramsName = std::move(std::string(preIter, iter));
+                        ++iter;
+                        preIter = iter;
+                        break;
+                    }
+                    ++iter;
+                }
+                while (*iter != ' ') {
+                    //parse value
+                    if (*iter == '&') {
+                        paramsValue = std::move(std::string(preIter, iter));
+                        ++iter;
+                        preIter = iter;
+                        break;
+                    }
+                    ++iter;
+                    if (*iter == ' ') {
+                        break;
+                    }
+                }
+                if (*iter == ' ') {
+                    paramsValue = std::move(std::string(preIter, iter));
+                }
+                this->params.insert({paramsName, paramsValue});
+            }
+
+        }
+    }
+    assert(methodVec.size() == 2);
     this->method = methodVec[0];
     this->uri = methodVec[1];
 
+
     for (auto it = headerVec.begin() + 1; it != headerVec.end(); ++it) {
-        std::vector<std::string> val;
-        split_regex(val, *it, boost::regex(": "));
-        if (val.size() <= 1) {
-            continue;
-        } else {
-            this->headers.insert({to_lower_copy(val[0]), to_lower_copy(val[1])});
+        //解析键值对
+        const std::string &kv = *it;
+        std::string name;
+        std::string value;
+        auto i = kv.begin();
+        //parse name
+        for (; i != kv.end(); ++i) {
+            char c = *i;
+            if (c == ':') {
+                name = std::string(kv.begin(), i);
+                ++i;
+                assert(*i == ' ');
+                break;
+            }
+        }
+        //pase value
+        if (i + 1 < kv.end()) {
+            value = std::string(i + 1, kv.end());
+            this->headers.insert({to_lower_copy(name), to_lower_copy(value)});
         }
     }
 }
