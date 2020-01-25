@@ -3,11 +3,10 @@
 //
 
 #include "Server.h"
+#include "http/HttpHandler.h"
 
-int main (int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
 
-
-    Server s("../www/http/properties/properties.json");
-    s.run();
+    ServerFactory::run("../www/http/properties/properties.json");
     return 0;
 }
