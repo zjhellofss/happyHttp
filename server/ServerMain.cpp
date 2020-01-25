@@ -7,6 +7,6 @@
 
 int main(int argc, char *argv[]) {
 
-    ServerFactory::run("../www/http/properties/properties.json");
+    ServerFactory::run("/Users/fss/CLionProjects/httpserver/happyHttp/www/http/properties/properties.json");
     return 0;
 }

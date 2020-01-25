@@ -17,7 +17,6 @@
 #include "HttpHeader.h"
 
 
-
 std::shared_ptr<Server> ServerFactory::server = nullptr;
 
 Server *ServerFactory::getServer(const std::string &path) {
@@ -132,6 +131,7 @@ void readCb(struct bufferevent *bev, void *arg) {
             //访问的首页
             page = "." + staticPage + ServerFactory::getInitConfig()->getIndexFile();
         }
+        LOG(INFO) << page << "\n";
         bool isExists = boost::filesystem::exists(page);
         auto p = boost::filesystem::current_path().string();
         //在文件存在的情况下
@@ -148,8 +148,10 @@ void readCb(struct bufferevent *bev, void *arg) {
                 sendFile(bev, page);
             }
         } else {
-            page.erase(page.begin());
-            page = "." + staticPage + page;
+            assert(page.size() >= 2);
+            page.erase(page.begin(), page.begin() + 1);
+            page = staticPage + page;
+            LOG(INFO) << page << "\n";
             if (boost::filesystem::exists(page)) {
                 //文件是位于static 目录中的一个文件
                 LOG(INFO) << "Visit uri successfully:" << httpHeader.getUri() << "\n";
@@ -303,7 +305,7 @@ std::string getFileType(const std::string &filetype) {
 }
 
 void send404(bufferevent *bev) {
-    std::string host = "." + ServerFactory::getInitConfig()->getStaticPage() + "404.html";
+    std::string host = ServerFactory::getInitConfig()->getStaticPage() + "/404.html";
     int len = static_cast<int>(boost::filesystem::file_size(host));
     sendResponseHeader(bev, 404, "Not Found", "text/html", len, "");
     sendFile(bev, host);

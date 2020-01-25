@@ -72,7 +72,6 @@ void Server::serverInit() {
             std::cout << e.what() << std::endl;
             throw std::runtime_error("The server configuration file cannot be opened properly");
         }
-        LOG(INFO) << "日志系统初始化成功\n";
     }
 }
 
@@ -91,7 +90,7 @@ void Server::logInit() {
     google::SetLogDestination(google::ERROR, (basePath + "ERROR_").data());
     google::SetLogDestination(google::FATAL, (basePath + "FATAL_").data());
 
-    google::SetStderrLogging(google::WARNING);
+    google::SetStderrLogging(google::INFO);
 }
 
 InitConfig *Server::getInitConfig() const {
