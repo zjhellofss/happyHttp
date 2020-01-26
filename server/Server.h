@@ -6,7 +6,9 @@
 #define HAPPYHTTP_SERVER_H
 
 #include <string>
+#include <set>
 #include "InitConfig.h"
+#include "http/HttpConnection.h"
 
 class Server {
 
@@ -30,7 +32,7 @@ private:
 private:
     InitConfig *initConfig = nullptr;
     std::string configPath;
-
+    std::set<HttpConnection> connections;
 };
 
 

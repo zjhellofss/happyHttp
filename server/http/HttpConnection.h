@@ -9,13 +9,26 @@
 
 class HttpConnection {
 public:
-    ~ HttpConnection ();
+    ~ HttpConnection();
 
-    HttpConnection (int fd, bufferevent *bev);
+    HttpConnection(int fd, bufferevent *bev);
+
+    int getFd() const;
+
+    bool isTimeOut() {
+        return this->useTime - time(nullptr) > 5000;
+    }
+
+    time_t getUseTime() const;
+
+    void setUseTime(time_t useTime);
+
+    bool operator<(const HttpConnection &rhs) const;
 
 private:
     int fd;
     struct bufferevent *bev;
+    time_t useTime;
 };
 
 #endif //HAPPYHTTP_HTTPCONNECTION_H

@@ -1,4 +1,3 @@
-//
 // Created by fushenshen on 2020/1/11.
 //
 
@@ -97,6 +96,4 @@ void HttpHeader::parse() {
 const std::map<std::string, std::string> &HttpHeader::getParams() const {
     return params;
 }
-
-
 

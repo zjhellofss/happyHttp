@@ -17,7 +17,7 @@ public:
         this->parse();
     }
 
-    const std::string &getValue(const std::string head) const {
+    const std::string &getValue(const std::string& head) const {
         return this->headers.at(head);
     }
 

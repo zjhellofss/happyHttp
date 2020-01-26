@@ -97,12 +97,10 @@ void listenerInit(struct evconnlistener *listener, evutil_socket_t fd, struct so
 
 
 void eventCb(struct bufferevent *bev, short events, void *arg) {
-    if (events & BEV_EVENT_ERROR) {
+    if ((events & BEV_EVENT_EOF) || (events & BEV_EVENT_ERROR)) {
         LOG(ERROR) << "Read ERROR\n";
         auto *connection = (HttpConnection *) arg;
         delete connection;
-    } else {
-        //不处理
     }
 }
 
@@ -240,7 +238,8 @@ void sendResponseHeader(struct bufferevent *bev, int code,
     resp.resize(512);
     const std::string &respType = getFileType(type);
     const std::string dateStr = getDateTime();
-    sprintf((char *) resp.data(), "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\nServer:%s\r\nDate:%s\r\n",
+    sprintf((char *) resp.data(),
+            "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\nServer:%s\r\nDate:%s\r\nConnection:close\r\n",
             code,
             respCode.data(), type.data(), len, "happyHttp", dateStr.data());
     if (code == 301) {
