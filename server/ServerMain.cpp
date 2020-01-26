@@ -5,8 +5,7 @@
 #include "Server.h"
 #include "http/HttpHandler.h"
 
-int main(int argc, char *argv[]) {
-
+int main() {
     ServerFactory::run("/Users/fss/CLionProjects/httpserver/happyHttp/www/http/properties/properties.json");
     return 0;
 }

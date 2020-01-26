@@ -17,6 +17,7 @@ public:
 
     static InitConfig *getInitConfig();
 
+    static std::set<HttpConnection *> &getHttpConnectSet();
 
 
 private :

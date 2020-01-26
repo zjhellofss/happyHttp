@@ -97,6 +97,10 @@ InitConfig *Server::getInitConfig() const {
     return initConfig;
 }
 
+std::set<HttpConnection*> &Server::getConnections() {
+    return connections;
+}
+
 
 
 

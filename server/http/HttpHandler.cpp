@@ -43,6 +43,24 @@ InitConfig *ServerFactory::getInitConfig() {
     return s->getInitConfig();
 }
 
+std::set<HttpConnection *> &ServerFactory::getHttpConnectSet() {
+    return server->getConnections();
+}
+
+
+void sigHandler(int signo) {
+    auto &s = ServerFactory::getHttpConnectSet();
+    for (auto iter = s.begin(); iter != s.end();) {
+        bool f = (*iter)->isTimeOut();
+        if (f) {
+            LOG(INFO) << "clear set: " << s.size() << "\n";
+            s.erase(iter++);
+        } else {
+            ++iter;
+        }
+    }
+    alarm(15);
+}
 
 void socketServerProcess() {
     sockaddr_in serv{};
@@ -72,6 +90,8 @@ void socketServerProcess() {
         }
     }
     evconnlistener_set_error_cb(listener, acceptErrorCb);
+    alarm(15);
+    signal(SIGALRM, sigHandler);
     event_base_loop(base, EVLOOP_NO_EXIT_ON_EMPTY);
     evconnlistener_free(listener);
     event_base_free(base);
@@ -87,7 +107,10 @@ void listenerInit(struct evconnlistener *listener, evutil_socket_t fd, struct so
         //将listener修改为非阻塞的模式
         evutil_make_socket_nonblocking(fd);
         //为client添加读和写函数
-        bufferevent_setcb(bev, readCb, writeCb, eventCb, new HttpConnection(fd, bev));
+        auto *httpConnection = new HttpConnection(fd, bev);
+        auto &set = ServerFactory::getHttpConnectSet();
+        set.insert(httpConnection);
+        bufferevent_setcb(bev, readCb, writeCb, eventCb, httpConnection);
         //以水平模式读取输入
         bufferevent_enable(bev, EV_READ);
     } else {
@@ -97,10 +120,11 @@ void listenerInit(struct evconnlistener *listener, evutil_socket_t fd, struct so
 
 
 void eventCb(struct bufferevent *bev, short events, void *arg) {
-    if ((events & BEV_EVENT_EOF) || (events & BEV_EVENT_ERROR)) {
-        LOG(ERROR) << "Read ERROR\n";
+    if ((events & BEV_EVENT_ERROR)) {
+        LOG(INFO) << "READ END\n";
+        auto &set = ServerFactory::getHttpConnectSet();
         auto *connection = (HttpConnection *) arg;
-        delete connection;
+        set.erase(connection);
     }
 }
 
@@ -113,6 +137,9 @@ void readCb(struct bufferevent *bev, void *arg) {
     bufferevent_read(bev, request, sizeof(request));
     std::string requestHead(request);
     HttpHeader httpHeader(request);
+    auto *connection = (HttpConnection *) arg;
+    connection->setUseTime(time(nullptr));
+    auto s = ServerFactory::getHttpConnectSet();
     if (httpHeader.getMethod() == "POST") {
 
     } else if (httpHeader.getMethod() == "GET") {
@@ -239,7 +266,7 @@ void sendResponseHeader(struct bufferevent *bev, int code,
     const std::string &respType = getFileType(type);
     const std::string dateStr = getDateTime();
     sprintf((char *) resp.data(),
-            "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\nServer:%s\r\nDate:%s\r\nConnection:close\r\n",
+            "HTTP/1.1 %d %s\r\nContent-Type:%s\r\nContent-Length:%ld\r\nServer:%s\r\nDate:%s\r\nConnection:keep-alive\r\n",
             code,
             respCode.data(), type.data(), len, "happyHttp", dateStr.data());
     if (code == 301) {

@@ -27,12 +27,14 @@ public:
 
     InitConfig *getInitConfig() const;
 
+    std::set<HttpConnection *> &getConnections();
+
 private:
 
 private:
     InitConfig *initConfig = nullptr;
     std::string configPath;
-    std::set<HttpConnection> connections;
+    std::set<HttpConnection *> connections;
 };
 
 

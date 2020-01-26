@@ -29,5 +29,13 @@ bool HttpConnection::operator<(const HttpConnection &rhs) const {
     return useTime < rhs.useTime;
 }
 
+bool HttpConnection::operator<(const HttpConnection *rhs) const {
+    return this->useTime < rhs->useTime;
+}
+
+bool HttpConnection::isTimeOut() {
+    return time(nullptr) - this->useTime > 30;
+}
+
 
 

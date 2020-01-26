@@ -15,15 +15,15 @@ public:
 
     int getFd() const;
 
-    bool isTimeOut() {
-        return this->useTime - time(nullptr) > 5000;
-    }
+    bool isTimeOut() ;
 
     time_t getUseTime() const;
 
     void setUseTime(time_t useTime);
 
     bool operator<(const HttpConnection &rhs) const;
+
+    bool operator<(const HttpConnection *rhs) const;
 
 private:
     int fd;
